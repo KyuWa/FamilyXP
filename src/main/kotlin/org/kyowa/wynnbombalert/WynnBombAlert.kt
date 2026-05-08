@@ -13,9 +13,15 @@ fun String.stripPrivateUse(): String {
     var i = 0
     while (i < length) {
         val cp = codePointAt(i)
-        if (Character.getType(cp) != Character.PRIVATE_USE.toInt()) {
-            sb.appendCodePoint(cp)
-        }
+        val type = Character.getType(cp)
+        val drop =
+            type == Character.PRIVATE_USE.toInt() ||
+            type == Character.UNASSIGNED.toInt() ||
+            type == Character.SURROGATE.toInt() ||
+            cp in 0xE000..0xF8FF ||    // BMP private use area
+            cp in 0xFFF0..0xFFFF ||    // Specials / non-characters
+            cp in 0xF0000..0x10FFFF    // Supplementary PUA A + B
+        if (!drop) sb.appendCodePoint(cp)
         i += Character.charCount(cp)
     }
     return sb.toString()
