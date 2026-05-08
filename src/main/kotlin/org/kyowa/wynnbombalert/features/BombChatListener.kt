@@ -15,19 +15,44 @@ object BombChatListener {
     private val HTTP_CLIENT = HttpClient.newHttpClient()
     private val GSON = Gson()
 
+    private var pendingMessage: String? = null
+    private var pendingTimestamp: Long = 0
+    private const val BUFFER_TTL_MS = 1000L
+
     fun register() {
         ClientReceiveMessageEvents.GAME.register { message, _ ->
             val raw = message.string
                 .replace(COLOR_CODE_REGEX, "")
                 .replace('\n', ' ')
                 .trim()
-            if (BOMB_REGEX.containsMatchIn(raw)) {
-                val webhookUrl = BombAlertConfig.config.webhookUrl
-                if (webhookUrl.isNotBlank()) {
-                    sendToDiscord(webhookUrl, raw)
+
+            val now = System.currentTimeMillis()
+            val pending = pendingMessage
+            val combined = if (pending != null && (now - pendingTimestamp) < BUFFER_TTL_MS) {
+                "$pending $raw"
+            } else null
+
+            when {
+                BOMB_REGEX.containsMatchIn(raw) -> {
+                    triggerAlert(raw)
+                    pendingMessage = null
+                }
+                combined != null && BOMB_REGEX.containsMatchIn(combined) -> {
+                    triggerAlert(combined)
+                    pendingMessage = null
+                }
+                else -> {
+                    pendingMessage = raw
+                    pendingTimestamp = now
                 }
             }
         }
+    }
+
+    private fun triggerAlert(message: String) {
+        val webhookUrl = BombAlertConfig.config.webhookUrl
+        if (webhookUrl.isBlank()) return
+        sendToDiscord(webhookUrl, message)
     }
 
     private fun sendToDiscord(webhookUrl: String, message: String) {
