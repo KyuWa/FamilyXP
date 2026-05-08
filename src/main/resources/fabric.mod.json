@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "wynnbombalert",
+  "version": "${version}",
+  "name": "WynnBombAlert",
+  "description": "Sends a Discord notification when a Combat Experience Bomb is thrown on Wynncraft.",
+  "authors": [{"name": "KyoWaa"}],
+  "license": "All Rights Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      {
+        "adapter": "kotlin",
+        "value": "org.kyowa.wynnbombalert.WynnBombAlert"
+      }
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "fabric-language-kotlin": "*",
+    "minecraft": "~1.21.11"
+  }
+}
