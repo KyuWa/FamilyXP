@@ -3,9 +3,9 @@ package org.kyowa.wynnbombalert.features
 import com.google.gson.Gson
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import org.kyowa.wynnbombalert.COLOR_CODE_REGEX
-import org.kyowa.wynnbombalert.PRIVATE_USE_REGEX
 import org.kyowa.wynnbombalert.WynnBombAlert
 import org.kyowa.wynnbombalert.config.BombAlertConfig
+import org.kyowa.wynnbombalert.stripPrivateUse
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -28,7 +28,7 @@ object BombChatListener {
         ClientReceiveMessageEvents.GAME.register { message, _ ->
             val raw = message.string
                 .replace(COLOR_CODE_REGEX, "")
-                .replace(PRIVATE_USE_REGEX, "")
+                .stripPrivateUse()
                 .replace('\n', ' ')
                 .replace(MULTI_SPACE_REGEX, " ")
                 .trim()
