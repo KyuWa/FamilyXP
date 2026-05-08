@@ -9,6 +9,8 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 object BombChatListener {
     private val BOMB_REGEX = Regex("""^[^:]+has thrown a Combat Experience Bomb on .+""")
@@ -18,6 +20,7 @@ object BombChatListener {
     private var pendingMessage: String? = null
     private var pendingTimestamp: Long = 0
     private const val BUFFER_TTL_MS = 1000L
+    private const val BOMB_DURATION_MINUTES = 20
 
     fun register() {
         ClientReceiveMessageEvents.GAME.register { message, _ ->
@@ -52,19 +55,50 @@ object BombChatListener {
     private fun triggerAlert(message: String) {
         val webhookUrl = BombAlertConfig.config.webhookUrl
         if (webhookUrl.isBlank()) return
-        sendToDiscord(webhookUrl, message)
-    }
-
-    private fun sendToDiscord(webhookUrl: String, message: String) {
         Thread {
             runCatching {
-                val body = GSON.toJson(mapOf("content" to "**$message**"))
-                val request = HttpRequest.newBuilder()
-                    .uri(URI.create(webhookUrl))
+                val boldMessage = "**$message**"
+
+                // POST with ?wait=true so Discord returns the message object (we need the ID)
+                val initialBody = GSON.toJson(mapOf("content" to "$boldMessage ⏰ $BOMB_DURATION_MINUTES minutes remaining"))
+                val postRequest = HttpRequest.newBuilder()
+                    .uri(URI.create("$webhookUrl?wait=true"))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .POST(HttpRequest.BodyPublishers.ofString(initialBody))
                     .build()
-                HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString())
+                val response = HTTP_CLIENT.send(postRequest, HttpResponse.BodyHandlers.ofString())
+
+                @Suppress("UNCHECKED_CAST")
+                val messageId = (GSON.fromJson(response.body(), Map::class.java)["id"] as? String)
+                    ?: run {
+                        WynnBombAlert.LOGGER.error("Could not parse message ID from Discord response: ${response.body()}")
+                        return@runCatching
+                    }
+
+                // One scheduled task per minute for the full 20-minute bomb duration
+                val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
+                    Thread(r).also { it.isDaemon = true }
+                }
+
+                for (minutesElapsed in 1..BOMB_DURATION_MINUTES) {
+                    val minutesLeft = BOMB_DURATION_MINUTES - minutesElapsed
+                    scheduler.schedule({
+                        runCatching {
+                            val content = if (minutesLeft > 0) {
+                                "$boldMessage ⏰ $minutesLeft minute${if (minutesLeft == 1) "" else "s"} remaining"
+                            } else {
+                                "$boldMessage ❌ EXPIRED"
+                            }
+                            val patchRequest = HttpRequest.newBuilder()
+                                .uri(URI.create("$webhookUrl/messages/$messageId"))
+                                .header("Content-Type", "application/json")
+                                .method("PATCH", HttpRequest.BodyPublishers.ofString(GSON.toJson(mapOf("content" to content))))
+                                .build()
+                            HTTP_CLIENT.send(patchRequest, HttpResponse.BodyHandlers.ofString())
+                        }.onFailure { WynnBombAlert.LOGGER.error("Failed to update countdown (messageId=$messageId)", it) }
+                        if (minutesLeft == 0) scheduler.shutdown()
+                    }, minutesElapsed.toLong(), TimeUnit.MINUTES)
+                }
             }.onFailure { WynnBombAlert.LOGGER.error("Failed to send Discord webhook", it) }
         }.also { it.isDaemon = true }.start()
     }
