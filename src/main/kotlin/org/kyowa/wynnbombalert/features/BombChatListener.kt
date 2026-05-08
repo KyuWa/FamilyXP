@@ -23,6 +23,7 @@ object BombChatListener {
     private var pendingTimestamp: Long = 0
     private const val BUFFER_TTL_MS = 1000L
     private const val BOMB_DURATION_MINUTES = 20
+    private const val EXPIRE_DELETE_DELAY_SECONDS = 5L
 
     fun register() {
         ClientReceiveMessageEvents.GAME.register { message, _ ->
@@ -82,26 +83,46 @@ object BombChatListener {
                     Thread(r).also { it.isDaemon = true }
                 }
 
-                for (minutesElapsed in 1..BOMB_DURATION_MINUTES) {
+                // Countdown edits: 19 minutes remaining down to 1 minute remaining
+                for (minutesElapsed in 1 until BOMB_DURATION_MINUTES) {
                     val minutesLeft = BOMB_DURATION_MINUTES - minutesElapsed
                     scheduler.schedule({
                         runCatching {
-                            val content = if (minutesLeft > 0) {
-                                "$boldMessage ⏰ $minutesLeft minute${if (minutesLeft == 1) "" else "s"} remaining"
-                            } else {
-                                "$boldMessage ❌ EXPIRED"
-                            }
-                            val patchRequest = HttpRequest.newBuilder()
-                                .uri(URI.create("$webhookUrl/messages/$messageId"))
-                                .header("Content-Type", "application/json")
-                                .method("PATCH", HttpRequest.BodyPublishers.ofString(GSON.toJson(mapOf("content" to content))))
-                                .build()
-                            HTTP_CLIENT.send(patchRequest, HttpResponse.BodyHandlers.ofString())
+                            val content = "$boldMessage ⏰ $minutesLeft minute${if (minutesLeft == 1) "" else "s"} remaining"
+                            patch(webhookUrl, messageId, content)
                         }.onFailure { WynnBombAlert.LOGGER.error("Failed to update countdown (messageId=$messageId)", it) }
-                        if (minutesLeft == 0) scheduler.shutdown()
                     }, minutesElapsed.toLong(), TimeUnit.MINUTES)
                 }
+
+                // At t=20min: edit to EXPIRED
+                scheduler.schedule({
+                    runCatching {
+                        patch(webhookUrl, messageId, "$boldMessage ❌ EXPIRED")
+                    }.onFailure { WynnBombAlert.LOGGER.error("Failed to mark expired (messageId=$messageId)", it) }
+                }, BOMB_DURATION_MINUTES.toLong(), TimeUnit.MINUTES)
+
+                // At t=20min+5s: delete the message
+                scheduler.schedule({
+                    runCatching {
+                        val deleteRequest = HttpRequest.newBuilder()
+                            .uri(URI.create("$webhookUrl/messages/$messageId"))
+                            .DELETE()
+                            .build()
+                        HTTP_CLIENT.send(deleteRequest, HttpResponse.BodyHandlers.ofString())
+                    }.onFailure { WynnBombAlert.LOGGER.error("Failed to delete expired message (messageId=$messageId)", it) }
+                    scheduler.shutdown()
+                }, BOMB_DURATION_MINUTES * 60L + EXPIRE_DELETE_DELAY_SECONDS, TimeUnit.SECONDS)
+
             }.onFailure { WynnBombAlert.LOGGER.error("Failed to send Discord webhook", it) }
         }.also { it.isDaemon = true }.start()
+    }
+
+    private fun patch(webhookUrl: String, messageId: String, content: String) {
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("$webhookUrl/messages/$messageId"))
+            .header("Content-Type", "application/json")
+            .method("PATCH", HttpRequest.BodyPublishers.ofString(GSON.toJson(mapOf("content" to content))))
+            .build()
+        HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString())
     }
 }
