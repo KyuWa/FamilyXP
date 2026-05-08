@@ -3,6 +3,7 @@ package org.kyowa.wynnbombalert.features
 import com.google.gson.Gson
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import org.kyowa.wynnbombalert.COLOR_CODE_REGEX
+import org.kyowa.wynnbombalert.PRIVATE_USE_REGEX
 import org.kyowa.wynnbombalert.WynnBombAlert
 import org.kyowa.wynnbombalert.config.BombAlertConfig
 import java.net.URI
@@ -14,6 +15,7 @@ import java.util.concurrent.TimeUnit
 
 object BombChatListener {
     private val BOMB_REGEX = Regex("""^[^:]+has thrown a Combat Experience Bomb on .+""")
+    private val MULTI_SPACE_REGEX = Regex("""\s+""")
     private val HTTP_CLIENT = HttpClient.newHttpClient()
     private val GSON = Gson()
 
@@ -26,7 +28,9 @@ object BombChatListener {
         ClientReceiveMessageEvents.GAME.register { message, _ ->
             val raw = message.string
                 .replace(COLOR_CODE_REGEX, "")
+                .replace(PRIVATE_USE_REGEX, "")
                 .replace('\n', ' ')
+                .replace(MULTI_SPACE_REGEX, " ")
                 .trim()
 
             val now = System.currentTimeMillis()
@@ -59,7 +63,6 @@ object BombChatListener {
             runCatching {
                 val boldMessage = "**$message**"
 
-                // POST with ?wait=true so Discord returns the message object (we need the ID)
                 val initialBody = GSON.toJson(mapOf("content" to "$boldMessage ⏰ $BOMB_DURATION_MINUTES minutes remaining"))
                 val postRequest = HttpRequest.newBuilder()
                     .uri(URI.create("$webhookUrl?wait=true"))
@@ -75,7 +78,6 @@ object BombChatListener {
                         return@runCatching
                     }
 
-                // One scheduled task per minute for the full 20-minute bomb duration
                 val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
                     Thread(r).also { it.isDaemon = true }
                 }
