@@ -11,13 +11,16 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
 object BombChatListener {
-    private val BOMB_REGEX = Regex(""".+has thrown a Combat Experience Bomb on .+""")
+    private val BOMB_REGEX = Regex("""^[^:]+has thrown a Combat Experience Bomb on .+""")
     private val HTTP_CLIENT = HttpClient.newHttpClient()
     private val GSON = Gson()
 
     fun register() {
         ClientReceiveMessageEvents.GAME.register { message, _ ->
-            val raw = message.string.replace(COLOR_CODE_REGEX, "").trim()
+            val raw = message.string
+                .replace(COLOR_CODE_REGEX, "")
+                .replace('\n', ' ')
+                .trim()
             if (BOMB_REGEX.containsMatchIn(raw)) {
                 val webhookUrl = BombAlertConfig.config.webhookUrl
                 if (webhookUrl.isNotBlank()) {
