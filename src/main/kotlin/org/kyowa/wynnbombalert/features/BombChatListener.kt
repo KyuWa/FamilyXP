@@ -14,7 +14,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 object BombChatListener {
-    private val BOMB_REGEX = Regex("""^[^:]+has thrown a Combat Experience Bomb on .+""")
+    private val BOMB_REGEX = Regex("""^[^:]+has thrown a (?:Combat Experience|Profession Speed|Profession XP) Bomb on .+""")
     private val MULTI_SPACE_REGEX = Regex("""\s+""")
     private val HTTP_CLIENT = HttpClient.newHttpClient()
     private val GSON = Gson()
