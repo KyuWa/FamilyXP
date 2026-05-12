@@ -3,7 +3,7 @@
   "id": "wynnbombalert",
   "version": "${version}",
   "name": "WynnBombAlert",
-  "description": "Sends a Discord notification when a Combat Experience Bomb is thrown on Wynncraft.",
+  "description": "Sends a Discord notification when a Combat Experience, Profession Speed, or Profession XP Bomb is thrown on Wynncraft.",
   "authors": [{"name": "KyoWaa"}],
   "license": "All Rights Reserved",
   "environment": "client",
